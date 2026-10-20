@@ -7,11 +7,11 @@ from datetime import datetime
 
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException
+from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from AI_service import ai_service, settings
-from AI_service.context.business_context import KNOWLEDGE_BASE
+from AI_service import settings
 from AI_service.ai_service import MODEL, SYSTEM_PROMPT
 
 app = FastAPI()
@@ -19,15 +19,88 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_MESSAGES = 20
 MAX_CONVERSATIONS = 1000
 MIN_RELEVANCE_SCORE = 0.35
-client = ai_service.client
+client = genai.Client()
 
 conversations = OrderedDict()
-knowledge_base = KNOWLEDGE_BASE
+
+knowledge_base = [
+    {
+        "id": 1,
+        "title": "XICTEK Systems",
+        "content": (
+            "XICTEK Systems is a product-focused software company building "
+            "practical digital products and custom solutions."
+        ),
+        "source": "https://www.xicteksystems.com/",
+        "is_public": True
+    },
+    {
+        "id": 2,
+        "title": "Software Development Services",
+        "content": (
+            "Services include custom software, web applications, mobile apps, "
+            "and SaaS development. The services page describes web applications "
+            "using React, Next.js, and TypeScript, and cross-platform mobile "
+            "development using Flutter and React Native."
+        ),
+        "source": "https://www.xicteksystems.com/services",
+        "is_public": True
+    },
+    {
+        "id": 3,
+        "title": "AI and Automation",
+        "content": (
+            "XICTEK Systems describes AI services including OpenAI and LLM "
+            "integrations, chatbots, custom ML models, intelligent automation, "
+            "and practical AI-assisted workflows."
+        ),
+        "source": "https://www.xicteksystems.com/services",
+        "is_public": True
+    },
+    {
+        "id": 4,
+        "title": "Cloud Services",
+        "content": (
+            "XICTEK Systems describes cloud architecture, migration, and "
+            "managed infrastructure on Azure and AWS, as well as DevOps and "
+            "cloud infrastructure services."
+        ),
+        "source": "https://www.xicteksystems.com/services",
+        "is_public": True
+    },
+    {
+        "id": 5,
+        "title": "HisabDo",
+        "content": (
+            "HisabDo is XICTEK Systems' expense-management and digital-ledger "
+            "product for individuals and small businesses. The website lists "
+            "offline-first records, digital khata and customer records, PDF "
+            "reports, voice entry, and backup and restore."
+        ),
+        "source": "https://www.xicteksystems.com/",
+        "is_public": True
+    },
+    {
+        "id": 6,
+        "title": "Contact",
+        "content": (
+            "The XICTEK Systems website lists xicteksystems@gmail.com as a "
+            "contact address."
+        ),
+        "source": "https://www.xicteksystems.com/",
+        "is_public": True
+    }
+]
 vector_store = []
 
 
 def create_embedding(text, task_type):
-    return ai_service.create_embedding(text, task_type)
+    result = client.models.embed_content(
+        model=settings.GEMINI_EMBEDDING_MODEL,
+        contents=text,
+        config=types.EmbedContentConfig(task_type=task_type)
+    )
+    return result.embeddings[0].values
 
 
 def cosine_similarity(a, b):
@@ -174,7 +247,7 @@ def chat(request: ChatRequest):
         if not response.text:
             raise ValueError("Gemini returned an empty response.")
     except Exception as exc:
-        logger.error("Chat generation failed.")
+        logger.exception("Chat generation failed")
         raise HTTPException(
             status_code=503,
             detail=(

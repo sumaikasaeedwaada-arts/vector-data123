@@ -1,0 +1,20 @@
+from fastapi import APIRouter, Depends
+
+from AI_service.controllers.chat_controller import handle_send_message
+from AI_service.dependencies import authenticated_user
+from AI_service.schemas.chat import ChatResponse, MessageRequest
+
+
+router = APIRouter()
+
+
+@router.post(
+    "/api/conversations/{conversation_id}/messages",
+    response_model=ChatResponse
+)
+def send_chat_message(
+    conversation_id: str,
+    request: MessageRequest,
+    user: dict = Depends(authenticated_user)
+):
+    return handle_send_message(conversation_id, request, user)

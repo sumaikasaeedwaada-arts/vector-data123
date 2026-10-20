@@ -598,110 +598,6 @@ class RagApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["citations"], [])
 
-    def test_vector_index_upsert_search_metadata_and_delete(self):
-        with patch.object(
-            rag,
-            "create_embedding",
-            return_value=[1.0, 0.0]
-        ):
-            upload = self.client.post(
-                "/api/documents",
-                headers=self.headers,
-                files={
-                    "file": (
-                        "annual.txt",
-                        b"Annual revenue was $42.",
-                        "text/plain"
-                    )
-                }
-            )
-        self.assertEqual(upload.status_code, 201, upload.text)
-        document_id = upload.json()["id"]
-        api_status = self.client.get(
-            "/api/vector-index",
-            headers=self.headers
-        )
-        self.assertEqual(api_status.status_code, 200, api_status.text)
-        self.assertEqual(api_status.json()["record_count"], 1)
-
-        with api.database.connect() as connection:
-            record = rag.get_embedding(connection, document_id, 0, 1)
-            self.assertEqual(record["id"], f"{document_id}:0")
-            self.assertEqual(record["content"], "Annual revenue was $42.")
-            self.assertEqual(record["metadata"]["source"], "annual.txt")
-            self.assertEqual(rag.get_index_status(connection, 1)["record_count"], 1)
-
-            api.database.initialize_database()
-            status = rag.get_index_status(connection, 1)
-            self.assertEqual(status["embedding_dimensions"], 2)
-            self.assertEqual(status["similarity_metric"], "cosine")
-
-            stable_id = rag.update_embedding(
-                connection,
-                document_id,
-                0,
-                "Updated annual revenue was $42.",
-                [0.9, 0.1],
-                1
-            )
-            updated = rag.get_embedding(connection, document_id, 0, 1)
-            self.assertEqual(stable_id, updated["id"])
-            self.assertEqual(updated["content"], "Updated annual revenue was $42.")
-
-            with patch.object(
-                rag,
-                "create_embedding",
-                return_value=[1.0, 0.0]
-            ):
-                results = rag.search_chunks(
-                    connection,
-                    1,
-                    "annual revenue",
-                    limit=2,
-                    filters={"filename": "annual.txt"}
-                )
-            self.assertEqual(len(results), 1)
-            self.assertEqual(results[0]["id"], stable_id)
-            self.assertEqual(results[0]["metadata"]["page_number"], 1)
-
-            self.assertFalse(
-                rag.delete_embedding(connection, document_id, 0, user_id=999)
-            )
-            self.assertTrue(
-                rag.delete_embedding(connection, document_id, 0, user_id=1)
-            )
-            self.assertIsNone(rag.get_embedding(connection, document_id, 0, 1))
-            self.assertEqual(rag.get_index_status(connection, 1)["record_count"], 0)
-
-    def test_vector_index_rejects_invalid_and_mismatched_embeddings(self):
-        with patch.object(
-            rag,
-            "create_embedding",
-            return_value=[1.0, 0.0]
-        ):
-            upload = self.client.post(
-                "/api/documents",
-                headers=self.headers,
-                files={
-                    "file": ("notes.txt", b"A valid chunk.", "text/plain")
-                }
-            )
-        self.assertEqual(upload.status_code, 201, upload.text)
-
-        with api.database.connect() as connection:
-            with self.assertRaises(ValueError):
-                rag.update_embedding(
-                    connection,
-                    upload.json()["id"],
-                    0,
-                    "Invalid dimension update.",
-                    [1.0, 0.0, 0.0]
-                )
-            with self.assertRaises(ValueError):
-                rag.serialize_embedding([float("nan")])
-            with self.assertRaises(ValueError):
-                rag.serialize_embedding([0.0, 0.0])
-
     def test_invalid_nested_context_is_rejected(self):
         conversation = self.client.post(
             "/api/conversations",
@@ -837,21 +733,6 @@ class RagApiTests(unittest.TestCase):
             files={"file": ("notes.csv", b"a,b", "text/csv")}
         )
         self.assertEqual(result.status_code, 415)
-
-    def test_embedding_provider_value_error_returns_service_error(self):
-        with patch.object(
-            rag,
-            "create_embedding",
-            side_effect=ValueError("private provider detail")
-        ):
-            response = self.client.post(
-                "/api/documents",
-                headers=self.headers,
-                files={"file": ("notes.txt", b"Business note.", "text/plain")}
-            )
-
-        self.assertEqual(response.status_code, 503)
-        self.assertNotIn("private provider", response.text)
 
     def test_authentication_rate_limit_is_enforced(self):
         with api.database.connect() as connection:

@@ -16,7 +16,7 @@ def ask(question: str = Query(min_length=1, max_length=4000)):
     try:
         answer = ask_ai(question)
     except Exception as exc:
-        logger.error("Question answering failed.")
+        logger.exception("Question answering failed")
         raise HTTPException(
             status_code=503,
             detail=(
